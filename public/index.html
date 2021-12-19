@@ -1,0 +1,190 @@
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.x/dist/vue.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@2.x/dist/vuetify.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@4.x/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@2.x/dist/vuetify.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+</head>
+<body>
+<div id="app">
+  <v-app>
+    <!-- Endpoint, Token -->
+    <v-card class="ma-2">
+      <v-card-title>
+        <span class="headline">Test ONE API</span>
+      </v-card-title>
+      <v-card-text>
+        <v-form>
+          <v-text-field v-model="form.endpoint" label="Endpoint"></v-text-field>
+          <v-text-field v-model="form.token" label="Token"></v-text-field>
+          <v-btn color="primary" class="mr-4" @click="saveForm()">Save</v-btn>
+          <v-btn class="mr-4" @click="loadForm()">Cancel</v-btn>
+        </v-form>
+      </v-card-text>
+    </v-card>
+    <!-- 【1】POST /ocr/receipt -->
+    <v-card class="ma-2">
+      <v-card-title>
+        <span class="title">【1】POST /ocr/receipt</span>
+        <span class="subtitle-2 ml-4">Base64でエンコードされたレシート画像をOCR、解析します。 画像のOCR解析を行うため、レスポンスに数秒を要します。</span>
+        <v-spacer></v-spacer>
+        <v-btn icon @click="ocrForm.visible = !ocrForm.visible">
+          <v-icon>{{ ocrForm.visible ? 'mdi-minus' : 'mdi-plus' }}</v-icon>
+        </v-btn>
+      </v-card-title>
+      <v-card-text v-if="ocrForm.visible">
+        <v-form>
+          <v-file-input show-size label="Image" v-model="ocrForm.imageFile"
+                        @change="changeImageFile" accept="image/jpeg"></v-file-input>
+          <div class="text-caption ml-8">解像度: 640x480px以上(1024x768px以上を推奨) ファイル容量: 2MB以下 ファイル形式: JPEG</div>
+          <div v-if="ocrForm.image" style="height: 200px;" class="ml-8">
+            <img :src="ocrForm.image" style="height: 100%;">
+          </div>
+          <v-checkbox v-model="ocrForm.includeJanCode" label="include_jan_code"></v-checkbox>
+          <v-btn color="primary" class="mr-4" :loading="ocrForm.loading" :disabled="ocrForm.loading" @click="ocr()">OCR
+          </v-btn>
+          <v-btn class="mr-4" @click="resetOcrForm()">Reset</v-btn>
+        </v-form>
+        <div v-if="ocrForm.result" class="json">
+          {{ ocrForm.result }}
+          <div class="text-sm-right">
+            <v-btn small color="white" @click="copy(ocrForm.result)">Copy</v-btn>
+          </div>
+        </div>
+        <div v-if="ocrForm.error" class="error-json">
+          {{ ocrForm.error }}
+          <div v-if="ocrForm.error.response">
+            <hr>
+            {{ ocrForm.error.response }}
+          </div>
+        </div>
+      </v-card-text>
+    </v-card>
+    <v-snackbar v-model="notice.visible" :timeout="notice.timeout" :color="notice.color" right top>
+      {{ notice.text }}
+      <v-btn icon small @click="notice.visible = false">
+        <v-icon>mdi-close</v-icon>
+      </v-btn>
+    </v-snackbar>
+  </v-app>
+</div>
+
+<script>
+  new Vue({
+    el: '#app',
+    vuetify: new Vuetify(),
+    data () {
+      return {
+        form: {},
+        notice: {},
+        ocrForm: {},
+      };
+    },
+    mounted () {
+      this.loadForm();
+      this.resetOcrForm();
+    },
+    computed: {},
+    methods: {
+      changeImageFile (v) {
+        if (v) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            this.ocrForm.image = reader.result;
+            console.log(reader.result.length / 1024);
+          };
+          reader.readAsDataURL(v)
+        } else {
+          this.ocrForm.image = '';
+        }
+      },
+      copy (v) {
+        const text = ['[object Object]', '[object Array]'].some(type => type === Object.prototype.toString.call(v))
+          ? JSON.stringify(v) : v;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text);
+        } else if (window.clipboardData) {
+          window.clipboardData.setData('Text', text);
+        }
+        this.notice = { visible: true, timeout: 2000, color: 'success', text: 'Copied' };
+      },
+      ocr () {
+        const form = this.ocrForm;
+        this.$set(form, 'loading', true);
+        axios.post(this.form.endpoint + `/ocr/receipt`, {
+          image: form.image,
+          include_jan_code: form.includeJanCode
+        }, {
+          headers: {
+            Authorization: `Bearer ${this.form.token}`,
+            Accept: 'application/vnd.wed.v1+json'
+          }
+        })
+          .then(v => {
+            this.$set(form, 'result', v.data);
+            this.$set(form, 'loading', false);
+          })
+          .catch(e => {
+            console.log('error:', e);
+            this.$set(form, 'error', e);
+            this.$set(form, 'loading', false);
+          });
+      },
+      resetOcrForm () {
+        this.ocrForm = {
+          visible: true,
+          imageFile: null,
+          image: '',
+          includeJanCode: true,
+          results: null,
+          error: null,
+        };
+      },
+      resetForm () {
+        this.form = {
+          endpoint: 'https://one-api.wow.one',
+          token: 'IOfzy1Xnnzx0wQP2wUQfebUMg3IzVhZv',
+        };
+      },
+      loadForm () {
+        let form;
+        try {
+          form = JSON.parse(window.localStorage.form)
+        } catch (e) {
+          form = {};
+        }
+        this.form = form || {};
+        if (!this.form.endpoint) this.resetForm();
+      },
+      saveForm () {
+        this.notice = { visible: true, timeout: 2000, color: 'success', text: 'Saved settings' };
+        window.localStorage.form = JSON.stringify(this.form);
+      },
+    },
+  });
+</script>
+<style>
+    div.json {
+        margin-top: 10px;
+        padding: 10px 20px;
+        background: #444;
+        color: #fff;
+        font-size: 14px;
+        border-radius: 5px;
+    }
+
+    div.error-json {
+        margin-top: 10px;
+        padding: 10px 20px;
+        background: #444;
+        color: orange;
+        font-size: 14px;
+        border-radius: 5px;
+    }
+</style>
+</body>
+</html>
